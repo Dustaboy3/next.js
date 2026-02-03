@@ -257,7 +257,7 @@ impl EcmascriptChunkPlaceable for EcmascriptModuleFacadeModule {
                 for (name, export) in &esm_exports.exports {
                     let name = name.clone();
                     match export {
-                        EsmExport::LocalBinding(_, liveness) => {
+                        EsmExport::LocalBinding(_, liveness, _) => {
                             exports.insert(
                                 name.clone(),
                                 EsmExport::ImportedBinding(
@@ -336,7 +336,6 @@ impl EcmascriptChunkPlaceable for EcmascriptModuleFacadeModule {
         let exports = EsmExports {
             exports,
             star_exports,
-            mangled_names: None, // Facade uses original names; mangling happens in locals
         }
         .resolved_cell();
         Ok(EcmascriptExports::EsmExports(exports).cell())
