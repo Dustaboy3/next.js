@@ -1,4 +1,11 @@
-use std::{borrow::Cow, io::Write, path::PathBuf, sync::Arc, thread, time::Duration};
+use std::{
+    borrow::Cow,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread,
+    time::Duration,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use bincode::{Decode, Encode};
@@ -47,8 +54,8 @@ use turbo_tasks::{
 };
 use turbo_tasks_backend::{BackingStorage, db_invalidation::invalidation_reasons};
 use turbo_tasks_fs::{
-    DiskFileSystem, FileContent, FileSystem, FileSystemPath, invalidation,
-    to_sys_path as fs_path_to_sys_path, util::uri_from_file,
+    FileContent, FileSystem, FileSystemPath, invalidation, to_sys_path as fs_path_to_sys_path,
+    util::uri_from_file,
 };
 use turbo_unix_path::{get_relative_path_to, sys_to_unix, unix_to_sys};
 use turbopack_core::{
@@ -94,6 +101,41 @@ static SOURCE_MAP_PREFIX_PROJECT: Lazy<String> =
 /// Get the `Vc<IssueFilter>` for a `ProjectContainer`.
 fn issue_filter_from_container(container: ResolvedVc<ProjectContainer>) -> Vc<IssueFilter> {
     container.project().issue_filter()
+}
+
+#[turbo_tasks::function(operation)]
+async fn project_new_operation(
+    is_dev: bool,
+    options: ProjectOptions,
+) -> Result<Vc<ProjectContainer>> {
+    let project = ProjectContainer::new(rcstr!("next.js"), is_dev)
+        .to_resolved()
+        .await?;
+    project.initialize(options).await?;
+    Ok(*project)
+}
+
+#[turbo_tasks::function(operation)]
+async fn project_update_operation(
+    container: ResolvedVc<ProjectContainer>,
+    options: PartialProjectOptions,
+) -> Result<Vc<()>> {
+    container.update(options).await?;
+    Ok(Vc::cell(()))
+}
+
+#[turbo_tasks::function(operation)]
+fn project_node_root_path_operation(container: ResolvedVc<ProjectContainer>) -> Vc<FileSystemPath> {
+    container.project().node_root()
+}
+
+#[turbo_tasks::function(operation)]
+async fn source_content_operation(
+    container: ResolvedVc<ProjectContainer>,
+    file_path: RcStr,
+) -> Result<Vc<FileContent>> {
+    let project_path = container.project().project_path().await?;
+    Ok(project_path.fs().root().await?.join(&file_path)?.read())
 }
 
 #[napi(object)]
@@ -548,14 +590,14 @@ pub fn project_new(
                 });
             }
 
-            let options: ProjectOptions = options.into();
+            let options = ProjectOptions::from(options);
             let is_dev = options.dev;
+            let root_path = options.root_path.clone();
             let container = turbo_tasks
                 .run(async move {
-                    let project = ProjectContainer::new(rcstr!("next.js"), is_dev);
-                    let project = project.to_resolved().await?;
-                    project.initialize(options).await?;
-                    Ok(project)
+                    project_new_operation(is_dev, options)
+                        .resolve_strongly_consistent()
+                        .await
                 })
                 .or_else(|e| turbopack_ctx.throw_turbopack_internal_result(&e.into()))
                 .await?;
@@ -563,15 +605,19 @@ pub fn project_new(
             if is_dev {
                 Handle::current().spawn({
                     let tt = turbo_tasks.clone();
+                    let root_path = root_path.clone();
                     async move {
                         let result = tt
                             .clone()
                             .run(async move {
-                                benchmark_file_io(
-                                    tt,
-                                    container.project().node_root().owned().await?,
-                                )
-                                .await
+                                let mut absolute_benchmark_dir = PathBuf::from(root_path);
+                                absolute_benchmark_dir.push(
+                                    &project_node_root_path_operation(container)
+                                        .read_strongly_consistent()
+                                        .await?
+                                        .path,
+                                );
+                                benchmark_file_io(&tt, &absolute_benchmark_dir).await
                             })
                             .await;
                         if let Err(err) = result {
@@ -630,16 +676,8 @@ impl CompilationEvent for SlowFilesystemEvent {
 /// This idea is copied from Bun:
 /// - https://x.com/jarredsumner/status/1637549427677364224
 /// - https://github.com/oven-sh/bun/blob/06a9aa80c38b08b3148bfeabe560/src/install/install.zig#L3038
-async fn benchmark_file_io(turbo_tasks: NextTurboTasks, directory: FileSystemPath) -> Result<()> {
-    // try to get the real file path on disk so that we can use it with tokio
-    let fs = ResolvedVc::try_downcast_type::<DiskFileSystem>(directory.fs)
-        .context(anyhow!(
-            "expected node_root to be a DiskFileSystem, cannot benchmark"
-        ))?
-        .await?;
-
-    let directory = fs.to_sys_path(&directory);
-    let temp_path = directory.join(format!(
+async fn benchmark_file_io(turbo_tasks: &NextTurboTasks, dir: &Path) -> Result<()> {
+    let temp_path = dir.join(format!(
         "tmp_file_io_benchmark_{:x}",
         rand::random::<u128>()
     ));
@@ -670,7 +708,7 @@ async fn benchmark_file_io(turbo_tasks: NextTurboTasks, directory: FileSystemPat
     let duration = Instant::now().duration_since(start);
     if duration > SLOW_FILESYSTEM_THRESHOLD {
         turbo_tasks.send_compilation_event(Arc::new(SlowFilesystemEvent {
-            directory: directory.to_string_lossy().into(),
+            directory: dir.to_string_lossy().into(),
             duration_ms: duration.as_millis(),
         }));
     }
@@ -689,7 +727,9 @@ pub async fn project_update(
     let container = project.container;
     ctx.turbo_tasks()
         .run(async move {
-            container.update(options).await?;
+            let _ = project_update_operation(container, options)
+                .read_strongly_consistent()
+                .await?;
             Ok(())
         })
         .or_else(|e| ctx.throw_turbopack_internal_result(&e.into()))
@@ -2362,15 +2402,8 @@ pub async fn project_get_source_for_asset(
     let ctx = &project.turbopack_ctx;
     ctx.turbo_tasks()
         .run(async move {
-            let source_content = &*container
-                .project()
-                .project_path()
-                .await?
-                .fs()
-                .root()
-                .await?
-                .join(&file_path)?
-                .read()
+            let source_content = &*source_content_operation(container, file_path.clone())
+                .read_strongly_consistent()
                 .await?;
 
             let FileContent::Content(source_content) = source_content else {
