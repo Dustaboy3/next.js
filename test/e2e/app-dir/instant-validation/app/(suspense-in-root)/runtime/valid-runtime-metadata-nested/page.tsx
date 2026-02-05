@@ -1,0 +1,38 @@
+import { Metadata } from 'next'
+import { cookies } from 'next/headers'
+import { Suspense } from 'react'
+
+export const unstable_instant = {
+  prefetch: 'runtime',
+  samples: [{ cookies: [] }],
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  await cookies()
+  return {
+    description: 'Runtime description',
+  }
+}
+
+export default function Page() {
+  return (
+    <main>
+      <p>
+        This page has a generateMetadata that accesses cookies. It's
+        runtime-prefetchable, so this is fine.
+      </p>
+      <p>
+        We also access cookies in the page itself, because a static page with
+        non-static metadata is not allowed.
+      </p>
+      <Suspense>
+        <Runtime />
+      </Suspense>
+    </main>
+  )
+}
+
+async function Runtime() {
+  await cookies()
+  return null
+}
