@@ -2007,24 +2007,26 @@ impl Endpoint for AppEndpoint {
 
         async move {
             let output = self.output();
+            let project = this.app_project.project();
+            let node_root = project.node_root().owned().await?;
+            let client_relative_root = project.client_relative_path().owned().await?;
+
             let output_assets = output.output_assets();
-            let output = output.await?;
-            let node_root = &*this.app_project.project().node_root().await?;
+            let output_assets: Vc<OutputAssets> = if *project.emit_client_hashes().await? {
+                let hashes_manifest = Vc::upcast(AssetHashesManifestAsset::new(
+                    node_root.join(&format!(
+                        "server/app{}/client-hashes.json",
+                        &self.app_endpoint_entry().await?.original_name
+                    ))?,
+                    all_asset_paths(output_assets, client_relative_root.clone()),
+                ));
+                output_assets.concat_asset(hashes_manifest)
+            } else {
+                output_assets
+            };
 
-            let (server_paths, client_paths) = if this
-                .app_project
-                .project()
-                .next_mode()
-                .await?
-                .is_development()
-            {
-                let node_root = this.app_project.project().node_root().owned().await?;
-                let server_paths = all_asset_paths(output_assets, node_root).owned().await?;
-
-                let client_relative_root = this
-                    .app_project
-                    .project()
-                    .client_relative_path()
+            let (server_paths, client_paths) = if project.next_mode().await?.is_development() {
+                let server_paths = all_asset_paths(output_assets, node_root.clone())
                     .owned()
                     .await?;
                 let client_paths = all_paths_in_root(output_assets, client_relative_root)
@@ -2035,7 +2037,7 @@ impl Endpoint for AppEndpoint {
                 (vec![], vec![])
             };
 
-            let written_endpoint = match *output {
+            let written_endpoint = match *output.await? {
                 AppEndpointOutput::NodeJs { rsc_chunk, .. } => EndpointOutputPaths::NodeJs {
                     server_entry_path: node_root
                         .get_path_to(&*rsc_chunk.path().await?)
@@ -2054,7 +2056,7 @@ impl Endpoint for AppEndpoint {
                 EndpointOutput {
                     output_assets: output_assets.to_resolved().await?,
                     output_paths: written_endpoint.resolved_cell(),
-                    project: this.app_project.project().to_resolved().await?,
+                    project: project.to_resolved().await?,
                 }
                 .cell(),
             )
