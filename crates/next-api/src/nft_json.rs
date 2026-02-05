@@ -12,6 +12,7 @@ use turbo_tasks_fs::{
     DirectoryEntry, File, FileContent, FileSystem, FileSystemPath,
     glob::{Glob, GlobOptions},
 };
+use turbo_tasks_hash::{Xxh3Hash64Hasher, encode_hex};
 use turbopack_core::{
     asset::{Asset, AssetContent},
     issue::{Issue, IssueExt, IssueSeverity, IssueStage, OptionStyledString, StyledString},
@@ -367,9 +368,18 @@ impl Asset for NftJsonAsset {
                 result.extend(includes.into_iter().flatten());
             }
 
+            let mut hasher = Xxh3Hash64Hasher::new();
+            for (name, hash) in &result {
+                hasher.write_ref(name);
+                hasher.write_ref(hash);
+            }
+            let hasher = encode_hex(hasher.finish());
+            let files: Vec<_> = result.keys().collect();
+
             let json = json!({
-              "version": 2,
-              "files": result
+              "version": 1,
+              "files": files,
+              "hash": hasher
             });
 
             Ok(AssetContent::file(

@@ -13,6 +13,7 @@ use turbo_tasks::{
 use turbo_tasks_fs::{
     DirectoryContent, DirectoryEntry, File, FileContent, FileSystemPath, glob::Glob,
 };
+use turbo_tasks_hash::{Xxh3Hash64Hasher, encode_hex};
 use turbopack::externals_tracing_module_context;
 use turbopack_core::{
     asset::{Asset, AssetContent},
@@ -164,9 +165,18 @@ impl Asset for ServerNftJsonAsset {
         // was required.
         server_output_assets.dedup();
 
+        let mut hasher = Xxh3Hash64Hasher::new();
+        for (name, hash) in &server_output_assets {
+            hasher.write_ref(name);
+            hasher.write_ref(hash);
+        }
+        let hasher = encode_hex(hasher.finish());
+        let files: Vec<_> = server_output_assets.iter().map(|(k, _)| k).collect();
+
         let json = json!({
-          "version": 2,
-          "files": server_output_assets
+          "version": 1,
+          "files": files,
+          "hash": hasher
         });
 
         Ok(AssetContent::file(
