@@ -8,7 +8,6 @@ import {
 import { ReflectAdapter } from '../web/spec-extension/adapters/reflect'
 import {
   throwToInterruptStaticGeneration,
-  postponeWithTracking,
   annotateDynamicAccess,
   delayUntilRuntimeStage,
 } from '../app-render/dynamic-rendering'
@@ -16,7 +15,6 @@ import {
 import {
   workUnitAsyncStorage,
   type PrerenderStoreLegacy,
-  type PrerenderStorePPR,
   type PrerenderStoreModern,
   type PrerenderStoreModernRuntime,
   type StaticPrerenderStore,
@@ -51,7 +49,6 @@ export function createSearchParamsFromClient(
     switch (workUnitStore.type) {
       case 'prerender':
       case 'prerender-client':
-      case 'prerender-ppr':
       case 'prerender-legacy':
         return createStaticPrerenderSearchParams(workStore, workUnitStore)
       case 'prerender-runtime':
@@ -100,7 +97,6 @@ export function createServerSearchParamsForServerPage(
     switch (workUnitStore.type) {
       case 'prerender':
       case 'prerender-client':
-      case 'prerender-ppr':
       case 'prerender-legacy':
         return createStaticPrerenderSearchParams(workStore, workUnitStore)
       case 'cache':
@@ -159,7 +155,6 @@ export function createPrerenderSearchParamsForClientPage(
         throw new InvariantError(
           'createPrerenderSearchParamsForClientPage should not be called in cache contexts.'
         )
-      case 'prerender-ppr':
       case 'prerender-legacy':
       case 'request':
         return Promise.resolve({})
@@ -185,7 +180,6 @@ function createStaticPrerenderSearchParams(
     case 'prerender-client':
       // We are in a cacheComponents (PPR or otherwise) prerender
       return makeHangingSearchParams(workStore, prerenderStore)
-    case 'prerender-ppr':
     case 'prerender-legacy':
       // We are in a legacy static generation and need to interrupt the
       // prerender when search params are accessed.
@@ -294,7 +288,7 @@ function makeHangingSearchParams(
 
 function makeErroringSearchParams(
   workStore: WorkStore,
-  prerenderStore: PrerenderStoreLegacy | PrerenderStorePPR
+  prerenderStore: PrerenderStoreLegacy
 ): Promise<SearchParams> {
   const cachedSearchParams = CachedSearchParams.get(workStore)
   if (cachedSearchParams) {
@@ -323,13 +317,6 @@ function makeErroringSearchParams(
           throwWithStaticGenerationBailoutErrorWithDynamicError(
             workStore.route,
             expression
-          )
-        } else if (prerenderStore.type === 'prerender-ppr') {
-          // PPR Prerender (no cacheComponents)
-          postponeWithTracking(
-            workStore.route,
-            expression,
-            prerenderStore.dynamicTracking
           )
         } else {
           // Legacy Prerender

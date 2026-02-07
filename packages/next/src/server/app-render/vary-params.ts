@@ -126,7 +126,6 @@ export function createVaryParamsAccumulator(): VaryParamsAccumulator | null {
         }
         return null
       }
-      case 'prerender-ppr':
       case 'prerender-legacy':
       case 'request':
       case 'cache':
@@ -153,7 +152,6 @@ export function getMetadataVaryParamsAccumulator(): VaryParamsAccumulator | null
         }
         return null
       }
-      case 'prerender-ppr':
       case 'prerender-legacy':
       case 'request':
       case 'cache':
@@ -199,7 +197,6 @@ export function getRootParamsVaryParamsAccumulator(): VaryParamsAccumulator | nu
         }
         return null
       }
-      case 'prerender-ppr':
       case 'prerender-legacy':
       case 'request':
       case 'cache':
