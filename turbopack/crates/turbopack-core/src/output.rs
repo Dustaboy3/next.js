@@ -85,7 +85,7 @@ impl OutputAssets {
     #[turbo_tasks::function]
     pub async fn concat_asset(&self, asset: ResolvedVc<Box<dyn OutputAsset>>) -> Result<Vc<Self>> {
         let mut assets: FxIndexSet<_> = self.0.iter().copied().collect();
-        assets.extend([asset]);
+        assets.insert(asset);
         Ok(Vc::cell(assets.into_iter().collect()))
     }
 
