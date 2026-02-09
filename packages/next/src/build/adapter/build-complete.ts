@@ -580,30 +580,22 @@ export async function handleBuildComplete({
               ''
           ),
           assets: {},
+          // Computing assetsHash for edge functions isn't implemented for now
           wasmAssets: {},
           config: {
             env: page.env,
           },
         }
 
-        function handleFile(file: string) {
+        for (const file of page.files) {
           const originalPath = path.join(distDir, file)
           const fileOutputPath = path.relative(
             config.distDir,
             path.join(path.relative(tracingRoot, distDir), file)
           )
-          if (!output.assets) {
-            output.assets = {}
-          }
           output.assets[fileOutputPath] = originalPath
         }
-        for (const file of page.files) {
-          handleFile(file)
-        }
         for (const item of [...(page.assets || [])]) {
-          if (!output.assets) {
-            output.assets = {}
-          }
           output.assets[item.name] = path.join(distDir, item.filePath)
         }
         for (const item of page.wasm || []) {
@@ -2131,6 +2123,9 @@ async function getSharedNodeAssets({
   }
 }
 
+/**
+ * This interface ensures that no asset is ever added without also updating the hash
+ */
 class AssetsBuilder {
   #assets: Record<string, string>
   #hasher: Hash
@@ -2157,12 +2152,16 @@ class AssetsBuilder {
     return builder
   }
 
-  extend(other: AssetsBuilder) {
+  #assertNotFrozen() {
     if (this.#digest) {
       throw new Error(
         'Cannot extend an AssetsBuilder that has already been finalized with digest()'
       )
     }
+  }
+
+  extend(other: AssetsBuilder) {
+    this.#assertNotFrozen()
     Object.assign(this.#assets, other.#assets)
     if (other.#digest == null) {
       other.#digest = other.#hasher.digest('hex')
@@ -2171,11 +2170,8 @@ class AssetsBuilder {
   }
 
   async extendWithNFT(tracingRoot: string, traceFilePath: string) {
-    if (this.#digest) {
-      throw new Error(
-        'Cannot extend an AssetsBuilder that has already been finalized with digest()'
-      )
-    }
+    this.#assertNotFrozen()
+
     const { files, hash } = (await JSON.parse(
       await fs.readFile(traceFilePath, 'utf8')
     )) as {
@@ -2195,11 +2191,8 @@ class AssetsBuilder {
   }
 
   async pushAsset(targetFilePath: string, sourceFilePath: string) {
-    if (this.#digest) {
-      throw new Error(
-        'Cannot extend an AssetsBuilder that has already been finalized with digest()'
-      )
-    }
+    this.#assertNotFrozen()
+
     if (!(targetFilePath in this.#assets)) {
       Log.trace('pushAsset individual: ' + targetFilePath)
       this.#hasher.update(`${targetFilePath}:`)
