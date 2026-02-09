@@ -23,6 +23,5 @@ pub mod project;
 pub mod route;
 pub mod routes_hashes_manifest;
 mod server_actions;
-mod server_hashes_manifest;
 mod versioned_content_map;
 mod webpack_stats;
