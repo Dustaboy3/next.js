@@ -220,6 +220,7 @@ async fn test_no_execution() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_inline_definitions() -> Result<()> {
     run_without_cache_check(&REGISTRATION, async move {
+        unmark_top_level_task_may_leak_eventually_consistent_state();
         enable_stats();
         inline_definitions().await?;
         assert_eq!(
