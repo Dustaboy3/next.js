@@ -179,7 +179,8 @@ describe('debug-build-paths', () => {
         expect(buildResult.cliOutput).toContain('○ /about')
         expect(buildResult.cliOutput).toContain('○ /dashboard')
         expect(buildResult.cliOutput).toContain('/blog/[slug]')
-        expect(buildResult.cliOutput).not.toMatch(/[○ƒ] \/with-type-error/)
+        // Leading whitespace since the pattern "!app/with-type-error/**" is in cliOutput and fails the test.
+        expect(buildResult.cliOutput).not.toContain(' /with-type-error')
       })
 
       it('should exclude dynamic route paths with negation', async () => {
@@ -210,7 +211,8 @@ describe('debug-build-paths', () => {
         expect(buildResult.cliOutput).toContain('Route (app)')
         expect(buildResult.cliOutput).toContain('○ /')
         expect(buildResult.cliOutput).toContain('○ /about')
-        expect(buildResult.cliOutput).not.toMatch(/[○ƒ] \/with-type-error/)
+        // Leading whitespace since the pattern "!app/with-type-error/**" is in cliOutput and fails the test.
+        expect(buildResult.cliOutput).not.toContain(' /with-type-error')
         expect(buildResult.cliOutput).not.toContain('○ /dashboard')
       })
 
@@ -225,7 +227,8 @@ describe('debug-build-paths', () => {
         expect(buildResult.cliOutput).toContain('○ /')
         expect(buildResult.cliOutput).toContain('○ /about')
         expect(buildResult.cliOutput).toContain('○ /foo')
-        expect(buildResult.cliOutput).not.toMatch(/[○ƒ] \/with-type-error/)
+        // Leading whitespace since the pattern "!app/with-type-error/**" is in cliOutput and fails the test.
+        expect(buildResult.cliOutput).not.toContain(' /with-type-error')
       })
 
       it('should log when pattern matches files', async () => {
@@ -237,7 +240,7 @@ describe('debug-build-paths', () => {
         })
         expect(buildResult.exitCode).toBe(0)
         expect(buildResult.cliOutput).toMatch(
-          /Pattern ".*" did match \d+ files/
+          /Pattern ".*" did match \d+ file\(s\)/
         )
       })
     })
