@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use next_core::{
+    boundary_types::boundary_type_server_component,
     next_client_reference::{CssClientReferenceModule, EcmascriptClientReferenceModule},
     next_server_component::server_component_module::NextServerComponentModule,
 };
@@ -54,13 +55,14 @@ pub async fn map_client_references(
                         client_reference_module.await?.client_module,
                     ),
                 )))
-            } else if let Some(server_component) =
-                ResolvedVc::try_downcast_type::<NextServerComponentModule>(module)
-            {
-                Ok(Some((
-                    module,
-                    ClientManifestEntryType::ServerComponent(server_component),
-                )))
+            } else if let Some(boundary) = &*module.boundary_info().await? {
+                if boundary.boundary_type == boundary_type_server_component() {
+                    let sc = ResolvedVc::try_downcast_type::<NextServerComponentModule>(module)
+                        .expect("server-component boundary must be NextServerComponentModule");
+                    Ok(Some((module, ClientManifestEntryType::ServerComponent(sc))))
+                } else {
+                    Ok(None)
+                }
             } else {
                 Ok(None)
             }
