@@ -9,7 +9,7 @@ import {
   PHASE_DEVELOPMENT_SERVER,
   PHASE_EXPORT,
   PHASE_PRODUCTION_BUILD,
-  type PHASE_PRODUCTION_SERVER,
+  PHASE_PRODUCTION_SERVER,
   type PHASE_TYPE,
 } from '../shared/lib/constants'
 import { defaultConfig, normalizeConfig } from './config-shared'
@@ -977,6 +977,18 @@ function assignDefaultsAndValidate(
   // only leverage deploymentId
   if (process.env.NEXT_DEPLOYMENT_ID) {
     result.deploymentId = process.env.NEXT_DEPLOYMENT_ID
+  }
+
+  if (
+    (phase === PHASE_PRODUCTION_BUILD || phase === PHASE_PRODUCTION_SERVER) &&
+    process.env.IS_TURBOPACK_TEST
+  ) {
+    if (!result.deploymentId) {
+      result.deploymentId = 'testing-id-1234'
+      if (!result.experimental.immutableAssetToken) {
+        result.experimental.immutableAssetToken = 'immutable-id-7890'
+      }
+    }
   }
 
   const tracingRoot = result?.outputFileTracingRoot
