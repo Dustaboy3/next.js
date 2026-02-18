@@ -2,7 +2,6 @@ use anyhow::Result;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 use turbo_tasks::{ResolvedVc, Vc};
 use turbo_tasks_fs::{File, FileContent, FileSystemPath};
-use turbo_tasks_hash::encode_hex;
 use turbopack_core::{
     asset::{Asset, AssetContent},
     output::{OutputAsset, OutputAssetsReference},
@@ -62,7 +61,7 @@ where
 {
     let mut map = serializer.serialize_map(Some(list.len()))?;
     for entry in list {
-        map.serialize_entry(&entry.path, &encode_hex(entry.content_hash))?;
+        map.serialize_entry(&entry.path, &entry.content_hash)?;
     }
     map.end()
 }

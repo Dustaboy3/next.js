@@ -1,11 +1,15 @@
 use anyhow::Result;
+use bincode::{Decode, Encode};
 use next_core::next_manifests::AssetBinding;
 use tracing::Instrument;
 use turbo_rcstr::RcStr;
-use turbo_tasks::{ResolvedVc, TryFlatJoinIterExt, TryJoinIterExt, Vc};
-use turbo_tasks_fs::FileSystemPath;
+use turbo_tasks::{
+    ResolvedVc, TaskInput, TryFlatJoinIterExt, TryJoinIterExt, Vc, trace::TraceRawVcs,
+};
+use turbo_tasks_fs::{FileContent, FileSystemPath};
+use turbo_tasks_hash::{ShaHasher, encode_hex};
 use turbopack_core::{
-    asset::Asset,
+    asset::{Asset, AssetContent},
     output::{OutputAsset, OutputAssets},
     reference::all_assets_from_entries,
 };
@@ -17,7 +21,7 @@ use turbopack_wasm::wasm_edge_var_name;
 pub struct AssetPath {
     /// Relative to the root_path
     pub path: RcStr,
-    pub content_hash: u64,
+    pub content_hash: RcStr,
 }
 
 /// A list of asset paths
@@ -27,14 +31,70 @@ pub struct AssetPaths(Vec<AssetPath>);
 #[turbo_tasks::value(transparent)]
 pub struct OptionAssetPath(Option<AssetPath>);
 
+#[derive(
+    Default, Debug, Clone, Copy, PartialEq, Eq, Hash, TaskInput, Decode, Encode, TraceRawVcs,
+)]
+pub enum HashAlgorithm {
+    #[default]
+    Default,
+    Sha256,
+    Sha384,
+    Sha512,
+}
+
+#[turbo_tasks::function]
+async fn hash(content: Vc<AssetContent>, algorithm: HashAlgorithm) -> Result<Vc<RcStr>> {
+    Ok(match &*content.await? {
+        AssetContent::File(content) => match &*content.await? {
+            FileContent::Content(file) => Vc::cell(
+                match algorithm {
+                    HashAlgorithm::Default => {
+                        unreachable!();
+                    }
+                    HashAlgorithm::Sha256 => {
+                        let mut hasher = ShaHasher::new_sha256();
+                        hasher.write_ref(file);
+                        let mut hash = hasher.finish_base64();
+                        hash.insert_str(0, "sha256-");
+                        hash
+                    }
+                    HashAlgorithm::Sha384 => {
+                        let mut hasher = ShaHasher::new_sha384();
+                        hasher.write_ref(file);
+                        let mut hash = hasher.finish_base64();
+                        hash.insert_str(0, "sha384-");
+                        hash
+                    }
+                    HashAlgorithm::Sha512 => {
+                        let mut hasher = ShaHasher::new_sha512();
+                        hasher.write_ref(file);
+                        let mut hash = hasher.finish_base64();
+                        hash.insert_str(0, "sha512-");
+                        hash
+                    }
+                }
+                .into(),
+            ),
+            FileContent::NotFound => anyhow::bail!("Can't compute hash without file content"),
+        },
+        AssetContent::Redirect { .. } => {
+            anyhow::bail!("Can't compute hash for redirect content")
+        }
+    })
+}
+
 #[turbo_tasks::function]
 async fn asset_path(
     asset: Vc<Box<dyn OutputAsset>>,
     node_root: FileSystemPath,
+    algorithm: HashAlgorithm,
 ) -> Result<Vc<OptionAssetPath>> {
     Ok(Vc::cell(
         if let Some(path) = node_root.get_path_to(&*asset.path().await?) {
-            let content_hash = *asset.content().hash().await?;
+            let content_hash = match algorithm {
+                HashAlgorithm::Default => encode_hex(*asset.content().hash().await?).into(),
+                _ => hash(asset.content(), algorithm).owned().await?,
+            };
             Some(AssetPath {
                 path: RcStr::from(path),
                 content_hash,
@@ -51,6 +111,7 @@ async fn asset_path(
 pub async fn all_asset_paths(
     assets: Vc<OutputAssets>,
     node_root: FileSystemPath,
+    algorithm: HashAlgorithm,
 ) -> Result<Vc<AssetPaths>> {
     let span = tracing::info_span!(
         "collect all asset paths",
@@ -63,7 +124,7 @@ pub async fn all_asset_paths(
         span.record("assets_count", all_assets.len());
         let asset_paths = all_assets
             .iter()
-            .map(|&asset| asset_path(*asset, node_root.clone()).owned())
+            .map(|&asset| asset_path(*asset, node_root.clone(), algorithm).owned())
             .try_flat_join()
             .await?;
         span.record("asset_paths_count", asset_paths.len());

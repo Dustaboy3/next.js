@@ -6,10 +6,12 @@
 
 mod deterministic_hash;
 mod hex;
+mod sha;
 mod xxh3_hash64;
 
 pub use crate::{
     deterministic_hash::{DeterministicHash, DeterministicHasher},
     hex::encode_hex,
+    sha::ShaHasher,
     xxh3_hash64::{Xxh3Hash64Hasher, hash_xxh3_hash64},
 };
