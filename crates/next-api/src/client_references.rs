@@ -1,9 +1,10 @@
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use next_core::{
-    boundary_types::boundary_type_server_component,
+    boundary_types::{boundary_type_server_component, boundary_type_server_utility},
     next_client_reference::{CssClientReferenceModule, EcmascriptClientReferenceModule},
     next_server_component::server_component_module::NextServerComponentModule,
+    next_server_utility::server_utility_module::NextServerUtilityModule,
 };
 use rustc_hash::FxHashMap;
 use turbo_tasks::{
@@ -22,6 +23,7 @@ pub enum ClientManifestEntryType {
     },
     CssClientReference(ResolvedVc<Box<dyn CssChunkPlaceable>>),
     ServerComponent(ResolvedVc<NextServerComponentModule>),
+    ServerUtility(ResolvedVc<NextServerUtilityModule>),
 }
 
 /// Tracks information about all the css and js client references in the graph.
@@ -60,6 +62,10 @@ pub async fn map_client_references(
                     let sc = ResolvedVc::try_downcast_type::<NextServerComponentModule>(module)
                         .expect("server-component boundary must be NextServerComponentModule");
                     Ok(Some((module, ClientManifestEntryType::ServerComponent(sc))))
+                } else if boundary.boundary_type == boundary_type_server_utility() {
+                    let su = ResolvedVc::try_downcast_type::<NextServerUtilityModule>(module)
+                        .expect("server-utility boundary must be NextServerUtilityModule");
+                    Ok(Some((module, ClientManifestEntryType::ServerUtility(su))))
                 } else {
                     Ok(None)
                 }
