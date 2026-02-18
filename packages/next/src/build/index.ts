@@ -991,9 +991,6 @@ export default async function build(
       // Install the native bindings early so we can have synchronous access later.
       await installBindings(config.experimental?.useWasmBinary)
 
-      process.env.NEXT_DEPLOYMENT_ID = config.deploymentId || ''
-      process.env.NEXT_IMMUTABLE_ASSET_TOKEN =
-        config.experimental.immutableAssetToken || config.deploymentId || ''
       NextBuildContext.config = config
 
       let configOutDir = 'out'
@@ -1959,6 +1956,10 @@ export default async function build(
       )
 
       // #endregion
+
+      // Set environment variables before running any code
+      process.env.NEXT_DEPLOYMENT_ID = config.deploymentId || ''
+
       // #region Collect data
 
       const numberOfWorkers = getNumberOfWorkers(config)
